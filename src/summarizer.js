@@ -64,14 +64,20 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
         const createdDate = issue.createdAt ? new Date(issue.createdAt).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : 'Unknown date';
         const isUrgent = (issue.priorityLabel || '').toLowerCase() === 'urgent';
         const priorityStr = issue.priorityLabel ? ` (Priority: ${issue.priorityLabel})` : ' (Priority: None)';
-        formattedData += `- **Issue**: [${issue.identifier}] ${issue.title} (Status: ${issue.state}${priorityStr})\n`;
+        formattedData += `- **Issue**: [${issue.identifier}] ${issue.title} (Current Status: ${issue.state}${priorityStr})\n`;
         if (issue.url) {
           formattedData += `  - **URL**: ${issue.url}\n`;
         }
         formattedData += `  - **Linear Priority**: ${issue.priorityLabel || 'No priority'}\n`;
         formattedData += `  - **Is Marked Urgent in Linear?**: ${isUrgent ? 'YES' : 'NO'}\n`;
         formattedData += `  - **Created At**: ${createdDate} (Created by ${issue.creatorName || 'Unknown'})\n`;
-        formattedData += `  - **Created in this timeframe?**: ${issue.isCreatedInTimeframe ? 'YES (Created by user in this timeframe)' : 'NO (Created previously or by someone else)'}\n`;
+        formattedData += `  - **Creation Status**: ${issue.isCreatedInTimeframe ? 'Created by user in this timeframe' : `Created previously or by someone else on ${createdDate}`}\n`;
+        if (issue.stateChanges && issue.stateChanges.length > 0) {
+          const transitions = issue.stateChanges.map(sc => `${sc.from || 'Initial'} -> ${sc.to || issue.state}`).join(', ');
+          formattedData += `  - **State Transitions in this timeframe**: ${transitions}\n`;
+        } else {
+          formattedData += `  - **State Transitions in this timeframe**: None (Status remained "${issue.state}", state was NOT changed during this timeframe)\n`;
+        }
         formattedData += `  - **Last Updated**: ${issueDate}\n`;
         formattedData += `  - **Activities**: ${issue.activities.join(', ')}\n`;
         if (issue.comments && issue.comments.length > 0) {
@@ -124,8 +130,11 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
     formattedData += '\n';
   }
 
+  const eventDates = getActiveEventDates(serviceResults);
+  const coveredDates = formatCoveredDates(sinceDate, nowDate, eventDates);
+
   if (!formattedData.trim()) {
-    return `## Stand-up Work Summary (${new Date(nowDate).toLocaleDateString()})\n\nNo activity was detected across Google Calendar, Fathom.video, Transcripts, Linear, GitHub, or Slack within this timeframe.`;
+    return `## Stand-up Summary: ${coveredDates}\n\nNo activity was detected across Google Calendar, Fathom.video, Transcripts, Linear, GitHub, or Slack within this timeframe.`;
   }
 
   const formatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -144,7 +153,6 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
   const yesterdayDayName = yesterdayObj.toLocaleDateString('en-US', { weekday: 'long' });
 
   const isMultipleDays = sinceLocalDateStr !== nowLocalDateStr;
-  const eventDates = getActiveEventDates(serviceResults);
 
   let timeframeHint = '';
 
@@ -186,7 +194,7 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
 
 The user wants a summary of what they worked on since the previous run.
 Output format:
-- A title with the date.
+- The top heading MUST be a level-2 markdown heading specifying the exact date(s) covered by this summary: "## Stand-up Summary: ${coveredDates}". Do NOT use today's date (${friendlyNow}) in the title heading unless today is the actual date covered.
 - A few short, grounded paragraphs summarizing the focus of the work, highlights, and main accomplishments. Include key work requests or commitments acknowledged in Slack or meetings/calls alongside GitHub and Linear progress.
 - Bullet points grouped logically by project, feature, or theme (rather than just listing by source) detailing specific updates (e.g. PRs reviewed, meetings/calls attended, tickets updated, Slack thread responses, comments left).
 - Use an active first-person voice ("I worked on...", "Reviewed...", "Discussed...", "Acknowledged...") ONLY for actions taken by the user (${userName}).
@@ -198,10 +206,15 @@ Output format:
     - If the hint is "since Friday", frame it as "since Friday" or "this past Friday and over the weekend".
   - Use specific days of the week or dates rather than corporate jargon.
 - STRICT TICKET & PR CREATION ATTRIBUTION RULES:
-  - ONLY state, list, or imply that ${userName} "created", "opened", "filed", or "authored" a Linear ticket if \`Created in this timeframe?: YES\` is explicitly present for that ticket and ${userName} is the creator.
-  - If a Linear ticket has \`Created in this timeframe?: NO\`, you MUST NEVER describe it as a ticket created by ${userName} in this summary. It was created prior to this timeframe or by someone else. Describe it strictly as worked on, updated, resolved by PR, or commented on (e.g. "Addressed backlog issues [STY-878]...", "Closed PR resolving [STY-880]...", "Updated [STY-881] with implementation plans").
+  - ONLY state, list, or imply that ${userName} "created", "opened", "filed", or "authored" a Linear ticket if it is explicitly noted as created by the user in this timeframe under "Creation Status".
+  - If a Linear ticket was created prior to this timeframe or by someone else, you MUST NEVER describe it as a ticket created by ${userName} in this summary. It was created prior to this timeframe or by someone else. Describe it strictly as worked on, updated, resolved by PR, or commented on (e.g. "Addressed backlog issues [STY-878]...", "Closed PR resolving [STY-880]...", "Updated [STY-881] with implementation plans").
   - NEVER create a "Created Linear tickets" list or heading containing older backlog tickets (such as STY-878, STY-879, STY-880, STY-881, STY-1146).
-  - ONLY state that ${userName} "opened" or "submitted" a PR if \`Opened in this timeframe: YES\` and it is authored by ${userName}. If it was opened earlier and updated/merged now, describe it as updated, merged, or closed.
+  - ONLY state that ${userName} "opened" or "submitted" a PR if it was opened in this timeframe and authored by ${userName}. If it was opened earlier and updated/merged now, describe it as updated, merged, or closed.
+  - NEVER copy or append internal prompt metadata, flags, or tracking parentheticals (such as "(Created in this timeframe: YES)", "(Created during this timeframe: YES)", "(Opened in this timeframe: YES)", "(Creation Status: ...)", or "(Priority: ...)") into the summary text. These annotations are strictly internal prompt signals for your reasoning, NOT text to include in the stand-up summary.
+- STRICT TICKET STATE CHANGE RULES:
+  - NEVER state or imply that ${userName} moved, marked, or updated an issue to "Done", "Completed", "Review", "Staged", or any other status unless "State Transitions in this timeframe" explicitly records a transition to that status.
+  - If an issue's state transitions in this timeframe is "None", the status was NOT changed during this timeframe—do NOT describe it as "Updated [XYZ] as Done", "Marked [XYZ] as Done", or "Closed [XYZ]".
+  - If an issue was already in a completed/done state prior to this timeframe, do NOT report it as an active work item unless the user commented on it or reopened it.
 - STRICT PRIORITY & SEVERITY RULES:
   - NEVER call, label, or describe any task, ticket, bug, PR, or work item as "urgent", "critical", "high-priority", or "release blocker" UNLESS its Linear ticket explicitly has Linear Priority set to "Urgent" (\`Is Marked Urgent in Linear?: YES\`).
   - If a Linear ticket has \`Is Marked Urgent in Linear?: NO\` (e.g., "No priority", "Normal", "Low", "High"), or if there is no Linear ticket, you MUST NOT refer to it as "urgent", "critical", or "release blocker" under any circumstances—even if meeting transcripts or Slack messages use the word "critical" or "blocker". Unless a ticket is marked Urgent in Linear, the team DOES NOT consider it urgent or blocking for a release.
@@ -223,7 +236,8 @@ Output format:
     systemInstruction += `\n\nBackground Organizational Context & Team Directory:\n${customContext}\nUse this background context to resolve team member roles, manager/colleague relationships, product names, contractors, and acronyms accurately.`;
   }
 
-  let prompt = `Here is today's date: ${friendlyNow}
+  let prompt = `Today's Date: ${friendlyNow} (Stand-up Run Date)
+Date(s) Covered by this Summary: ${coveredDates}
 Here is the collected work activity since the last run (from ${friendlySince} to ${friendlyNow}):
 
 ${formattedData}`;
@@ -236,7 +250,7 @@ ${formattedData}`;
     prompt += `Use the above prior summaries for background continuity so you can connect ongoing tasks or follow-ups seamlessly, but focus your main output on the NEW activity collected in this run.\n`;
   }
 
-  prompt += `\nGenerate the daily stand-up work summary with the appended Conversation Summary at the end.`;
+  prompt += `\nGenerate the daily stand-up work summary with the heading "## Stand-up Summary: ${coveredDates}" and the appended Conversation Summary at the end.`;
 
   // Call the Gemini API with retry logic for transient 503/429 errors
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -252,7 +266,7 @@ ${formattedData}`;
     try {
       const result = await model.generateContent(prompt);
       const rawText = result.response.text();
-      return sanitizeMarkdownLinks(rawText);
+      return sanitizeOutput(rawText, coveredDates);
     } catch (err) {
       lastError = err;
       const isTransient = err.message?.includes('503') || err.message?.includes('429') || err.status === 503 || err.status === 429;
@@ -270,14 +284,89 @@ ${formattedData}`;
 }
 
 /**
- * Strips backticks that accidentally enclose markdown links (e.g. `[PR#123](url)` -> [PR#123](url))
+ * Post-processes LLM output to clean formatting artifacts:
+ * 1. Strips backticks that accidentally enclose markdown links (e.g. `[PR#123](url)` -> [PR#123](url))
+ * 2. Strips accidental internal prompt metadata parentheticals like (Created in this timeframe: YES)
+ * 3. Ensures the top heading specifies the dates covered rather than today's date
  * @param {string} text Raw markdown text
+ * @param {string} [coveredDates] Formatted date(s) covered string
  * @returns {string} Cleaned markdown text
  */
-function sanitizeMarkdownLinks(text) {
+function sanitizeOutput(text, coveredDates) {
   if (!text) return text;
   // Match `[...](...)` or `[...](...) ([...](...))` enclosed in backticks
-  return text.replace(/`(\[[^`\n]+\]\([^`\n]+\)(?:\s*\(\[[^`\n]+\]\([^`\n]+\)\))*)`/g, '$1');
+  let cleaned = text.replace(/`(\[[^`\n]+\]\([^`\n]+\)(?:\s*\(\[[^`\n]+\]\([^`\n]+\)\))*)`/g, '$1');
+  // Strip any accidental internal metadata parentheticals like (Created in this timeframe: YES), (Opened in this timeframe: YES)
+  cleaned = cleaned.replace(/\s*\((?:Created|Opened)\s+(?:in|during)\s+this\s+timeframe:?\s*(?:yes|no)?\)/gi, '');
+  // Ensure the top heading uses the dates covered rather than today's date
+  if (coveredDates) {
+    const headingRegex = /^\s*##?\s*(?:Stand-up|Work)\s+Summary.*$/m;
+    if (headingRegex.test(cleaned)) {
+      cleaned = cleaned.replace(headingRegex, `## Stand-up Summary: ${coveredDates}`);
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * Formats the human-readable date or date range covered by the summary.
+ * @param {string} sinceDate Lookback start time (ISO string)
+ * @param {string} nowDate Current run cutoff time (ISO string)
+ * @param {Array<string>} [eventDates] Chronologically sorted unique local date strings (YYYY-MM-DD)
+ * @returns {string} Human-friendly covered date(s) (e.g. "Wednesday, October 14, 2026" or "Friday, October 9 – Sunday, October 11, 2026")
+ */
+export function formatCoveredDates(sinceDate, nowDate, eventDates = []) {
+  const sinceDateObj = new Date(sinceDate);
+  const nowDateObj = new Date(nowDate);
+
+  const getLocalDateStr = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const sinceLocalDateStr = getLocalDateStr(sinceDateObj);
+  const nowLocalDateStr = getLocalDateStr(nowDateObj);
+
+  const yesterdayObj = new Date(nowDateObj);
+  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+  const yesterdayLocalDateStr = getLocalDateStr(yesterdayObj);
+
+  const formatRange = (startStr, endStr) => {
+    const startD = new Date(`${startStr}T12:00:00`);
+    const endD = new Date(`${endStr}T12:00:00`);
+    if (startStr === endStr) {
+      return startD.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    const sameYear = startD.getFullYear() === endD.getFullYear();
+    const startOpt = sameYear 
+      ? { weekday: 'long', month: 'long', day: 'numeric' }
+      : { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const endOpt = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    return `${startD.toLocaleDateString('en-US', startOpt)} – ${endD.toLocaleDateString('en-US', endOpt)}`;
+  };
+
+  // Same day execution
+  if (sinceLocalDateStr === nowLocalDateStr) {
+    return formatRange(nowLocalDateStr, nowLocalDateStr);
+  }
+
+  // Standard daily stand-up (yesterday morning to today morning)
+  if (sinceLocalDateStr === yesterdayLocalDateStr) {
+    return formatRange(yesterdayLocalDateStr, yesterdayLocalDateStr);
+  }
+
+  // Events are present across the lookback window
+  if (eventDates.length > 0) {
+    const startStr = eventDates[0];
+    const endStr = eventDates[eventDates.length - 1];
+    return formatRange(startStr, endStr);
+  }
+
+  // No events present, multi-day span
+  const endFallbackStr = (nowDateObj.getHours() >= 15) ? nowLocalDateStr : yesterdayLocalDateStr;
+  return formatRange(sinceLocalDateStr, endFallbackStr);
 }
 
 /**

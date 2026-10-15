@@ -45,8 +45,19 @@ export default {
                 priorityLabel
                 createdAt
                 updatedAt
-                state { name }
+                state { name type }
                 creator { id name email }
+                assignee { id name email }
+                history(first: 10) {
+                  nodes {
+                    createdAt
+                    fromState { name }
+                    toState { name }
+                    fromAssignee { id name }
+                    toAssignee { id name }
+                    relationChanges { type identifier }
+                  }
+                }
               }
             }
           }
@@ -69,8 +80,19 @@ export default {
                 priorityLabel
                 createdAt
                 updatedAt
-                state { name }
+                state { name type }
                 creator { id name email }
+                assignee { id name email }
+                history(first: 10) {
+                  nodes {
+                    createdAt
+                    fromState { name }
+                    toState { name }
+                    fromAssignee { id name }
+                    toAssignee { id name }
+                    relationChanges { type identifier }
+                  }
+                }
               }
             }
           }
@@ -101,8 +123,19 @@ export default {
                 priorityLabel
                 createdAt
                 updatedAt
-                state { name }
+                state { name type }
                 creator { id name email }
+                assignee { id name email }
+                history(first: 10) {
+                  nodes {
+                    createdAt
+                    fromState { name }
+                    toState { name }
+                    fromAssignee { id name }
+                    toAssignee { id name }
+                    relationChanges { type identifier }
+                  }
+                }
               }
             }
           }
@@ -128,6 +161,20 @@ export default {
           const isCreatedByUser = issue.creator ? issue.creator.id === viewerId : false;
           const isCreatedInTimeframe = inRange(issue.createdAt) && isCreatedByUser;
 
+          const historyNodes = (issue.history?.nodes || []).filter(h => inRange(h.createdAt));
+          const stateChanges = historyNodes
+            .filter(h => h.fromState || h.toState)
+            .map(h => ({
+              from: h.fromState?.name || null,
+              to: h.toState?.name || null,
+              at: h.createdAt
+            }));
+
+          const wasNewlyAssigned = historyNodes.some(h => h.toAssignee?.id === viewerId) ||
+            (inRange(issue.createdAt) && issue.assignee?.id === viewerId);
+
+          const isCompletedOrCanceled = issue.state?.type === 'completed' || issue.state?.type === 'canceled';
+
           issuesMap.set(issue.id, {
             id: issue.id,
             identifier: issue.identifier,
@@ -136,6 +183,10 @@ export default {
             priority: issue.priority,
             priorityLabel: issue.priorityLabel || 'No priority',
             state: issue.state?.name || 'Unknown',
+            stateType: issue.state?.type || 'unknown',
+            stateChanges,
+            wasNewlyAssigned,
+            isCompletedOrCanceled,
             createdAt: issue.createdAt,
             updatedAt: issue.updatedAt,
             creatorName: issue.creator?.name || 'Unknown',
@@ -153,7 +204,22 @@ export default {
       };
 
       const assignedIssues = (assignedData?.viewer?.assignedIssues?.nodes || []).filter(i => inRange(i.updatedAt));
-      assignedIssues.forEach(issue => addIssue(issue, 'Assigned to you (updated in this timeframe)'));
+      assignedIssues.forEach(issue => {
+        const historyNodes = (issue.history?.nodes || []).filter(h => inRange(h.createdAt));
+        const wasNewlyAssigned = historyNodes.some(h => h.toAssignee?.id === viewerId) ||
+          (inRange(issue.createdAt) && issue.assignee?.id === viewerId);
+        const hasStateChange = historyNodes.some(h => h.fromState || h.toState);
+
+        let sourceLabel = 'Assigned to you';
+        if (wasNewlyAssigned) {
+          sourceLabel = 'Assigned to you in this timeframe';
+        } else if (hasStateChange) {
+          sourceLabel = 'Assigned to you (status changed in this timeframe)';
+        } else {
+          sourceLabel = 'Assigned to you (updated in this timeframe)';
+        }
+        addIssue(issue, sourceLabel);
+      });
 
       const createdIssues = (createdData?.viewer?.createdIssues?.nodes || []).filter(i => inRange(i.updatedAt));
       createdIssues.forEach(issue => {
@@ -176,7 +242,22 @@ export default {
         }
       });
 
-      return Array.from(issuesMap.values());
+      const finalIssues = Array.from(issuesMap.values()).filter(issue => {
+        // Exclude completed or canceled issues that had no direct user actions in this timeframe
+        // (i.e. status did NOT change in this timeframe, user did NOT comment on it, was NOT created in this timeframe, and was NOT newly assigned in this timeframe)
+        const isInactiveCompleted = issue.isCompletedOrCanceled &&
+          issue.stateChanges.length === 0 &&
+          issue.comments.length === 0 &&
+          !issue.isCreatedInTimeframe &&
+          !issue.wasNewlyAssigned;
+
+        if (isInactiveCompleted) {
+          return false;
+        }
+        return true;
+      });
+
+      return finalIssues;
     } catch (error) {
       console.error('[!] Error collecting from Linear:', error.message);
       return { error: error.message };
