@@ -30,7 +30,7 @@ async function main() {
   const existingConfig = {
     USER_NAME: process.env.USER_NAME || 'Nick Moline',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-    GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-4-argon',
     GITHUB_USERNAME: process.env.GITHUB_USERNAME || '',
     GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
     GITHUB_ORG: process.env.GITHUB_ORG || '',

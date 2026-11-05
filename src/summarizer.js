@@ -7,10 +7,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
  * @param {string} nowDate Current run time
  * @param {string} apiKey Gemini API Key
  * @param {string} userName User's full name
- * @param {string} [modelName] Gemini model to use (defaults to gemini-2.5-flash)
+ * @param {string} [modelName] Gemini model to use (defaults to gemini-4-argon)
  * @returns {Promise<string>} Markdown stand-up summary
  */
-export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey, userName, modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash', customContext = null, recentSummaries = []) {
+export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey, userName, modelName = process.env.GEMINI_MODEL || 'gemini-4-argon', customContext = null, recentSummaries = []) {
   if (!apiKey) {
     throw new Error('Gemini API key is not configured. Please set GEMINI_API_KEY.');
   }
@@ -413,7 +413,7 @@ ${formattedData}`;
 
   // Call the Gemini API with exponential backoff and automatic model fallback for 503/429/timeout errors
   const genAI = new GoogleGenerativeAI(apiKey);
-  const defaultFallbacks = ['gemini-4-argon', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+  const defaultFallbacks = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
   const configuredFallbacks = process.env.GEMINI_FALLBACK_MODELS
     ? process.env.GEMINI_FALLBACK_MODELS.split(',').map(s => s.trim()).filter(Boolean)
     : defaultFallbacks;

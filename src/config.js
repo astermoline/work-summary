@@ -11,8 +11,8 @@ const STATE_FILE_PATH = path.resolve('state.json');
 export function getConfig() {
   return {
     geminiApiKey: process.env.GEMINI_API_KEY,
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
-    geminiFallbackModels: process.env.GEMINI_FALLBACK_MODELS || 'gemini-4-argon,gemini-3.6-flash,gemini-3.5-flash',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-4-argon',
+    geminiFallbackModels: process.env.GEMINI_FALLBACK_MODELS || 'gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash',
     githubToken: process.env.GITHUB_TOKEN,
     githubUsername: process.env.GITHUB_USERNAME,
     githubOrg: process.env.GITHUB_ORG || '',
