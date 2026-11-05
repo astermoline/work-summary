@@ -1,46 +1,6 @@
 import fs from 'fs';
-import path from 'path';
 import { google } from 'googleapis';
-
-const TOKEN_PATH = path.resolve('.credentials/google-token.json');
-
-/**
- * Initializes and returns the OAuth2 client for Google APIs.
- */
-async function getAuthClient(env) {
-  const { googleClientId, googleClientSecret, googleRedirectUri } = env;
-  
-  if (!googleClientId || !googleClientSecret) {
-    throw new Error('Google OAuth credentials (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) are not configured.');
-  }
-
-  const oAuth2Client = new google.auth.OAuth2(
-    googleClientId,
-    googleClientSecret,
-    googleRedirectUri
-  );
-
-  if (!fs.existsSync(TOKEN_PATH)) {
-    throw new Error(`Google OAuth token file not found at ${TOKEN_PATH}. Run setup.js first.`);
-  }
-
-  const token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf-8'));
-  oAuth2Client.setCredentials(token);
-
-  // Automatically save refreshed tokens
-  oAuth2Client.on('tokens', (newTokens) => {
-    try {
-      const currentToken = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf-8'));
-      const updatedToken = { ...currentToken, ...newTokens };
-      fs.mkdirSync(path.dirname(TOKEN_PATH), { recursive: true });
-      fs.writeFileSync(TOKEN_PATH, JSON.stringify(updatedToken, null, 2), 'utf-8');
-    } catch (err) {
-      console.error('Warning: Failed to save refreshed Google OAuth tokens:', err.message);
-    }
-  });
-
-  return oAuth2Client;
-}
+import { TOKEN_PATH, getGoogleAuthClient } from '../google-auth.js';
 
 export default {
   name: 'calendar',
@@ -54,7 +14,7 @@ export default {
     }
 
     try {
-      const auth = await getAuthClient(env);
+      const auth = await getGoogleAuthClient(env);
       const calendar = google.calendar({ version: 'v3', auth });
 
       const response = await calendar.events.list({

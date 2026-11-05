@@ -28,6 +28,59 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
       continue;
     }
 
+    if (result.name === 'gmail' && !Array.isArray(result.data)) {
+      const sentList = result.data.sent || [];
+      const mentionThreads = result.data.explicitMentions || [];
+      if (sentList.length === 0 && mentionThreads.length === 0) {
+        continue;
+      }
+
+      if (sentList.length > 0) {
+        formattedData += `### Gmail (Sent by ${userName}) Activity:\n`;
+        sentList.forEach(email => {
+          const emailDate = new Date(email.timestamp).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          formattedData += `- **Sent Email**: "${email.subject}"\n`;
+          formattedData += `  - **Time**: ${emailDate} (${email.timestamp})\n`;
+          if (email.to) formattedData += `  - **To**: ${email.to}\n`;
+          if (email.cc) formattedData += `  - **Cc**: ${email.cc}\n`;
+          if (email.url) formattedData += `  - **Gmail Link**: ${email.url}\n`;
+          if (email.snippet) formattedData += `  - **Body Excerpt**: "${email.snippet.replace(/\n/g, ' ')}"\n`;
+        });
+        formattedData += '\n';
+      }
+
+      if (mentionThreads.length > 0) {
+        formattedData += `### Gmail "Explicit Mention" Threads (FOR INBOX NOTICE SECTION ONLY — DO NOT INCLUDE IN STAND-UP SUMMARY):\n`;
+        mentionThreads.forEach(thread => {
+          const latestDate = new Date(thread.latestTimestamp).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          const readState = thread.isUnread ? 'UNREAD' : 'Read';
+          const replyState = thread.repliedByMeInWindow
+            ? 'Replied by user in this timeframe'
+            : 'No reply from user in this timeframe';
+          const attentionState = thread.latestFromMe
+            ? 'Latest message was sent by user'
+            : 'Latest message is from someone else (Check / Action may be needed)';
+
+          formattedData += `- **Explicit Mention Email Thread**: "${thread.subject}"\n`;
+          formattedData += `  - **Gmail Thread URL**: ${thread.url}\n`;
+          formattedData += `  - **Latest Activity**: ${latestDate} (${thread.latestTimestamp})\n`;
+          formattedData += `  - **Status**: ${readState} | ${replyState} | ${attentionState}\n`;
+          if (thread.precedingMessage) {
+            const prevDate = new Date(thread.precedingMessage.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            formattedData += `  - **Prior Thread Context** (${prevDate} from ${thread.precedingMessage.from}): "${thread.precedingMessage.bodyExcerpt.replace(/\n/g, ' ')}"\n`;
+          }
+          formattedData += `  - **New Messages in this Timeframe (${thread.newMessageCount})**:\n`;
+          thread.newMessages.forEach(m => {
+            const mTime = new Date(m.timestamp).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            formattedData += `    * [${mTime}] **From**: ${m.from} -> **To**: ${m.to}${m.cc ? ` (Cc: ${m.cc})` : ''}\n`;
+            formattedData += `      **Message**: "${m.bodyExcerpt.replace(/\n/g, ' ')}"\n`;
+          });
+        });
+        formattedData += '\n';
+      }
+      continue;
+    }
+
     formattedData += `### ${result.displayName} Activity:\n`;
 
     if (result.name === 'calendar') {
@@ -37,6 +90,30 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
         formattedData += `  - **Time**: ${eventDate} (${event.start} to ${event.end})\n`;
         if (event.description) {
           formattedData += `  - **Details**: ${event.description.replace(/\n/g, ' ')}\n`;
+        }
+      });
+    } else if (result.name === 'gmail') {
+      result.data.forEach(email => {
+        const emailDate = new Date(email.timestamp).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        formattedData += `- **Sent Email**: "${email.subject}"\n`;
+        formattedData += `  - **Time**: ${emailDate} (${email.timestamp})\n`;
+        if (email.to) {
+          formattedData += `  - **To**: ${email.to}\n`;
+        }
+        if (email.cc) {
+          formattedData += `  - **Cc**: ${email.cc}\n`;
+        }
+        if (email.snippet) {
+          formattedData += `  - **Snippet**: "${email.snippet.replace(/\n/g, ' ')}"\n`;
+        }
+      });
+    } else if (result.name === 'gdrive') {
+      result.data.forEach(doc => {
+        const docDate = new Date(doc.updatedAt).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        formattedData += `- **${doc.typeLabel}**: "${doc.name}" (${doc.action})\n`;
+        formattedData += `  - **Last Modified**: ${docDate} (${doc.updatedAt})\n`;
+        if (doc.url) {
+          formattedData += `  - **URL**: ${doc.url}\n`;
         }
       });
     } else if (result.name === 'fathom') {
@@ -57,6 +134,45 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
         formattedData += `- **Call/Meeting Transcript**: ${t.title} (File: \`${t.filename}\`)\n`;
         formattedData += `  - **Time**: ${tDate} (${t.startTime})\n`;
         formattedData += `  - **Transcript Content**:\n\`\`\`\n${t.content}\n\`\`\`\n`;
+      });
+    } else if (result.name === 'cursor') {
+      result.data.forEach(chat => {
+        const chatDate = new Date(chat.startTime).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const revisitedTag = chat.isRevisited ? ` [Revisited from earlier thread — ${chat.priorTurnCount} prior turn(s)]` : '';
+        formattedData += `- **Cursor Brain Chat**: "${chat.title}"${revisitedTag} (Workspace: \`${chat.project}\`, Chat ID: \`${chat.id}\`)\n`;
+        formattedData += `  - **Time**: ${chatDate} (${chat.startTime} to ${chat.endTime})\n`;
+        if (chat.priorContext) {
+          formattedData += `  - **Prior Thread Context (Before this Window)**: ${chat.priorContext}\n`;
+        }
+        formattedData += `  - **New Turns in Timeframe**: ${chat.turnCount}\n`;
+        chat.turns.forEach((turn, idx) => {
+          const turnTime = new Date(turn.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          formattedData += `  - **Turn ${idx + 1}** (${turnTime}):\n`;
+          if (turn.userQuery) {
+            formattedData += `    * **User Prompt**: ${turn.userQuery.replace(/\n/g, '\n      ')}\n`;
+          }
+          if (turn.assistantResponse) {
+            formattedData += `    * **Cursor Summary/Outcome**: ${turn.assistantResponse.replace(/\n/g, '\n      ')}\n`;
+          }
+        });
+      });
+    } else if (result.name === 'cursorPlans') {
+      result.data.forEach(plan => {
+        const planDate = new Date(plan.updatedAt).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        formattedData += `- **Cursor Plan**: "${plan.name}" (File: \`${plan.filename}\`)\n`;
+        formattedData += `  - **Last Updated**: ${planDate} (${plan.updatedAt})\n`;
+        if (plan.referencedTickets && plan.referencedTickets.length > 0) {
+          formattedData += `  - **Referenced Tickets**: ${plan.referencedTickets.join(', ')}\n`;
+        }
+        if (plan.overview) {
+          formattedData += `  - **Overview**: ${plan.overview}\n`;
+        }
+        if (plan.totalTodos > 0) {
+          formattedData += `  - **Checklist Progress**: ${plan.completedTodos}/${plan.totalTodos} todos completed\n`;
+          plan.todos.forEach(t => {
+            formattedData += `    * [${t.status}] ${t.content}\n`;
+          });
+        }
       });
     } else if (result.name === 'linear') {
       result.data.forEach(issue => {
@@ -91,18 +207,56 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
       result.data.forEach(pr => {
         const prDate = new Date(pr.updatedAt).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
         const prCreatedDate = pr.createdAt ? new Date(pr.createdAt).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : 'Unknown date';
-        const isPrCreatedInTimeframe = pr.createdAt ? (new Date(pr.createdAt).getTime() >= new Date(sinceDate).getTime() && new Date(pr.createdAt).getTime() <= new Date(nowDate).getTime()) : false;
-        const relation = pr.isAuthor ? 'Authored by me' : `Authored by ${pr.author} (I reviewed/commented)`;
+        const isPrCreatedInTimeframe = pr.isCreatedInTimeframe ?? (pr.createdAt ? (new Date(pr.createdAt).getTime() >= new Date(sinceDate).getTime() && new Date(pr.createdAt).getTime() <= new Date(nowDate).getTime()) : false);
+
+        const actions = [];
+        if (pr.isAuthor) {
+          actions.push('Authored by me');
+        } else {
+          actions.push(`Authored by ${pr.author}`);
+        }
+        if (!pr.isAuthor && pr.userCommits && pr.userCommits.length > 0) {
+          actions.push(`I pushed ${pr.userCommits.length} commit(s) to this PR`);
+        }
+        if (pr.userReviews && pr.userReviews.length > 0) {
+          const states = Array.from(new Set(pr.userReviews.map(r => r.state))).join('/');
+          actions.push(`I reviewed (${states})`);
+        } else if (!pr.isAuthor && pr.userComments && pr.userComments.length > 0) {
+          actions.push(`I commented (${pr.userComments.length})`);
+        }
+        if (pr.mergedByMe) {
+          actions.push('Merged by me in this timeframe');
+        } else if (!pr.isAuthor && actions.length === 1) {
+          actions.push('I reviewed/commented');
+        }
+
+        const relation = actions.join('; ');
         const repoShort = pr.repoShortName || (pr.repository ? pr.repository.split('/')[1] : 'repo');
         const prNumStr = pr.number ? `PR#${pr.number}` : '';
         formattedData += `- **Pull Request**: [${repoShort} ${prNumStr}]("${pr.title}") in ${pr.repository} (${relation})\n`;
         formattedData += `  - **Repository Short Name**: ${repoShort}\n`;
         formattedData += `  - **PR Number**: ${pr.number || 'unknown'}\n`;
         formattedData += `  - **Title**: "${pr.title}"\n`;
-        formattedData += `  - **Status**: ${pr.state}\n`;
+        formattedData += `  - **Status**: ${pr.statusLabel || pr.state}\n`;
+        if (pr.baseRefName) {
+          formattedData += `  - **Branches**: \`${pr.headRefName}\` -> \`${pr.baseRefName}\`\n`;
+        }
+        if (pr.referencedTickets && pr.referencedTickets.length > 0) {
+          formattedData += `  - **Referenced Linear Tickets**: ${pr.referencedTickets.join(', ')}\n`;
+        }
         formattedData += `  - **URL**: ${pr.url}\n`;
         formattedData += `  - **Created At**: ${prCreatedDate} (Opened in this timeframe: ${isPrCreatedInTimeframe ? 'YES' : 'NO'})\n`;
+        if (pr.mergedAt) {
+          const mergedDate = new Date(pr.mergedAt).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          formattedData += `  - **Merged At**: ${mergedDate} (Merged in this timeframe: ${pr.isMergedInTimeframe ? 'YES' : 'NO'}, Merged by: ${pr.mergedBy || 'unknown'})\n`;
+        }
         formattedData += `  - **Last Updated**: ${prDate}\n`;
+        if (pr.userCommits && pr.userCommits.length > 0) {
+          formattedData += `  - **Commits Pushed by Me in this Timeframe (${pr.userCommits.length})**:\n`;
+          pr.userCommits.forEach(c => {
+            formattedData += `    * \`${c.sha}\`: "${c.message}"\n`;
+          });
+        }
       });
     } else if (result.name === 'slack') {
       result.data.forEach(msg => {
@@ -134,7 +288,7 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
   const coveredDates = formatCoveredDates(sinceDate, nowDate, eventDates);
 
   if (!formattedData.trim()) {
-    return `## Stand-up Summary: ${coveredDates}\n\nNo activity was detected across Google Calendar, Fathom.video, Transcripts, Linear, GitHub, or Slack within this timeframe.`;
+    return `## Stand-up Summary: ${coveredDates}\n\nNo activity was detected across Google Calendar, Fathom.video, Transcripts, Cursor Brain Chats, Linear, GitHub, or Slack within this timeframe.`;
   }
 
   const formatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
@@ -190,14 +344,15 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
     timeframeHint = `since ${sinceDayName}`;
   }
 
-  let systemInstruction = `You are a professional software engineering assistant. Your task is to compile a stand-up work summary based on activity logs from various integrations (GitHub, Linear, Google Calendar, Fathom.video, Slack, Call/Meeting Transcripts).
+  let systemInstruction = `You are a professional software engineering assistant. Your task is to compile a stand-up work summary based on activity logs from various integrations (GitHub, Linear, Google Calendar, Fathom.video, Slack, Call/Meeting Transcripts, Cursor Brain Chats).
 
 The user wants a summary of what they worked on since the previous run.
 Output format:
 - The top heading MUST be a level-2 markdown heading specifying the exact date(s) covered by this summary: "## Stand-up Summary: ${coveredDates}". Do NOT use today's date (${friendlyNow}) in the title heading unless today is the actual date covered.
-- A few short, grounded paragraphs summarizing the focus of the work, highlights, and main accomplishments. Include key work requests or commitments acknowledged in Slack or meetings/calls alongside GitHub and Linear progress.
-- Bullet points grouped logically by project, feature, or theme (rather than just listing by source) detailing specific updates (e.g. PRs reviewed, meetings/calls attended, tickets updated, Slack thread responses, comments left).
+- A few short, grounded paragraphs summarizing the focus of the work, highlights, and main accomplishments. Include key work requests or commitments acknowledged in Slack or meetings/calls alongside GitHub, Linear, and Cursor Brain Chat progress.
+- Bullet points grouped logically by project, feature, or theme (rather than just listing by source) detailing specific updates (e.g. PRs reviewed, meetings/calls attended, tickets updated, tasks investigated/implemented in Cursor, Slack thread responses, comments left).
 - Use an active first-person voice ("I worked on...", "Reviewed...", "Discussed...", "Acknowledged...") ONLY for actions taken by the user (${userName}).
+- Cursor Brain Chats represent AI pair-programming sessions, investigations, runbook audits, and feature/bugfix implementations directed by ${userName} in the Cursor IDE. Use them to enrich the technical details and context of ${userName}'s work in the stand-up summary (and to capture investigations, planning, or debugging work that may not have a standalone PR or ticket update), while still strictly adhering to the Linear & GitHub creation, state-transition, and priority rules below.
 - The user's name is ${userName} (and also referred to as Aster / Aster Moe in context). When synthesizing Fathom.video meeting summaries, arbitrary call transcripts, or Slack discussions, pay close attention to who is speaking or who did the work. In call transcripts, speakers may be named directly (e.g. Aster, Jessica Hubley) or labeled generically ('You', 'The speaker'). Only attribute tasks, resolutions, or actions to ${userName} if the logs specifically show ${userName} did them or agreed to do them. If a conversation describes work done by others or general team decisions, summarize it as a collaborative discussion (e.g. 'Participated in a team alignment meeting where X was discussed', 'Discussed X with Jessica in a phone call', 'Discussed X with the team in Slack') rather than attributing other people's actions to ${userName}.
 - Describe the timeframe of the summary naturally and accurately. Do not refer to the timeframe as a "sprint", "period", "reporting period", or "sprint/period". It is just a stand-up summary of work done since the last run.
   - Describe the timeframe of the work in the opening sentence of the summary based on this hint: "${timeframeHint}".
@@ -227,10 +382,14 @@ Output format:
 - Keep it concise, professional, and easy to read during a morning stand-up.
 - Do not mention raw IDs or internal API names unless relevant. Include clickable markdown links to PRs, Linear tickets, or Slack permalinks if provided.
 - At the very end of the output document, after a horizontal rule ("---"), append a dedicated section titled "## Conversation Summary".
-  - This section is for ${userName}'s personal reference to track all conversations, discussions, requests, and acknowledgments across Slack channels/threads, direct messages, Fathom video meetings, and phone call / meeting transcripts.
-  - Group updates logically (e.g., by Slack channel/thread, meeting title, or call transcript).
-  - Detail what was asked by others, what ${userName} acknowledged or committed to do, key decisions made, and any open action items.
-  - Include clickable links to Slack permalinks or Fathom recordings where available, or reference the transcript filename.`;
+  - This section is for ${userName}'s personal reference to track all conversations, discussions, requests, and acknowledgments across Slack channels/threads, direct messages, Fathom video meetings, phone call / meeting transcripts, Cursor Brain Chats, and Explicit Mention Emails.
+  - Group updates logically (e.g., by Slack channel/thread, meeting title, call transcript, "### Cursor Brain Chats", and "### Explicit Mention Emails to Check").
+  - Detail what was asked by others, what ${userName} acknowledged or committed to do, what was investigated/built in Cursor, key decisions made, and any open action items.
+  - Include clickable links to Slack permalinks, Fathom recordings, or Gmail threads where available, or reference the transcript filename / Cursor chat title.
+  - EXPLICIT MENTION EMAILS RULE:
+    - Any threads listed under \`Gmail "Explicit Mention" Threads\` come from a Gmail filter that tags emails where Jessica or Summer explicitly mention ${userName}.
+    - Do NOT include incoming \`Explicit Mention\` emails in the top "## Stand-up Summary" section (unless ${userName} also sent a reply in \`Gmail (Sent by ${userName})\`).
+    - Instead, whenever \`Gmail "Explicit Mention" Threads\` are present, include a dedicated subsection titled "### Explicit Mention Emails to Check" under "## Conversation Summary" so ${userName} knows to check their email. For each thread, list the Subject with a clickable link (\`[Open Thread in Gmail](url)\`), who sent the new message(s), whether it is still unread or awaiting a response, and a concise summary of what was said or requested of ${userName}.`;
 
   if (customContext) {
     systemInstruction += `\n\nBackground Organizational Context & Team Directory:\n${customContext}\nUse this background context to resolve team member roles, manager/colleague relationships, product names, contractors, and acronyms accurately.`;
@@ -252,30 +411,83 @@ ${formattedData}`;
 
   prompt += `\nGenerate the daily stand-up work summary with the heading "## Stand-up Summary: ${coveredDates}" and the appended Conversation Summary at the end.`;
 
-  // Call the Gemini API with retry logic for transient 503/429 errors
+  // Call the Gemini API with exponential backoff and automatic model fallback for 503/429/timeout errors
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: systemInstruction,
-  });
+  const defaultFallbacks = ['gemini-4-argon', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+  const configuredFallbacks = process.env.GEMINI_FALLBACK_MODELS
+    ? process.env.GEMINI_FALLBACK_MODELS.split(',').map(s => s.trim()).filter(Boolean)
+    : defaultFallbacks;
+  const candidateModels = Array.from(new Set([modelName, ...configuredFallbacks].filter(Boolean)));
 
-  const maxRetries = 3;
+  const perAttemptTimeoutMs = 75000; // 75s cap so hung requests fail over instead of stalling indefinitely
   let lastError;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await model.generateContent(prompt);
-      const rawText = result.response.text();
-      return sanitizeOutput(rawText, coveredDates);
-    } catch (err) {
-      lastError = err;
-      const isTransient = err.message?.includes('503') || err.message?.includes('429') || err.status === 503 || err.status === 429;
-      if (isTransient && attempt < maxRetries) {
-        const delayMs = attempt * 2000;
-        console.warn(`[!] Gemini API (${modelName}) returned transient error (attempt ${attempt}/${maxRetries}): ${err.message.split('\n')[0]}. Retrying in ${delayMs / 1000}s...`);
-        await new Promise(res => setTimeout(res, delayMs));
-      } else {
-        throw err;
+  for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
+    const currentModelName = candidateModels[mIdx];
+    const isFallback = mIdx > 0;
+    const maxAttempts = isFallback ? 2 : 3;
+    const retryDelaysMs = isFallback ? [6000] : [5000, 12000];
+
+    if (isFallback) {
+      console.warn(`[*] Falling back to backup Gemini model: ${currentModelName}...`);
+    }
+
+    const model = genAI.getGenerativeModel({
+      model: currentModelName,
+      systemInstruction: systemInstruction,
+    });
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      let timeoutId;
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error(`Request timed out after ${perAttemptTimeoutMs / 1000}s`));
+          }, perAttemptTimeoutMs);
+        });
+
+        const result = await Promise.race([
+          model.generateContent(prompt),
+          timeoutPromise,
+        ]);
+        clearTimeout(timeoutId);
+
+        const rawText = result.response.text();
+        if (isFallback) {
+          console.log(`[+] Summary successfully generated using backup model: ${currentModelName}`);
+        }
+        return sanitizeOutput(rawText, coveredDates);
+      } catch (err) {
+        clearTimeout(timeoutId);
+        lastError = err;
+        const msg = err.message || '';
+        const isRetryableOrModelError =
+          msg.includes('503') ||
+          msg.includes('429') ||
+          msg.includes('500') ||
+          msg.includes('404') ||
+          msg.includes('timed out') ||
+          msg.includes('fetch failed') ||
+          err.status === 503 ||
+          err.status === 429 ||
+          err.status === 500 ||
+          err.status === 404;
+
+        // If the model returns 404 (retired/not found), skip remaining attempts on this model and jump to next fallback
+        const isNotFound = msg.includes('404') || err.status === 404;
+
+        if (isRetryableOrModelError && !isNotFound && attempt < maxAttempts) {
+          const baseDelay = retryDelaysMs[attempt - 1] || 10000;
+          const jitter = Math.floor(Math.random() * 1500);
+          const delayMs = baseDelay + jitter;
+          console.warn(`[!] Gemini API (${currentModelName}) returned transient error (attempt ${attempt}/${maxAttempts}): ${msg.split('\n')[0]}. Retrying in ${(delayMs / 1000).toFixed(1)}s...`);
+          await new Promise(res => setTimeout(res, delayMs));
+        } else if (isRetryableOrModelError && mIdx < candidateModels.length - 1) {
+          console.warn(`[!] Gemini API (${currentModelName}) failed after ${attempt} attempt(s): ${msg.split('\n')[0]}.`);
+          break; // Move to next model in candidateModels
+        } else {
+          throw err;
+        }
       }
     }
   }
@@ -393,17 +605,38 @@ function getActiveEventDates(serviceResults) {
 
     if (result.name === 'calendar') {
       result.data.forEach(e => addDate(e.start));
+    } else if (result.name === 'gmail') {
+      if (Array.isArray(result.data)) {
+        result.data.forEach(email => addDate(email.timestamp));
+      } else {
+        (result.data.sent || []).forEach(email => addDate(email.timestamp));
+        (result.data.explicitMentions || []).forEach(t => addDate(t.latestTimestamp));
+      }
+    } else if (result.name === 'gdrive') {
+      result.data.forEach(doc => addDate(doc.updatedAt));
     } else if (result.name === 'fathom') {
       result.data.forEach(m => addDate(m.startTime));
     } else if (result.name === 'transcripts') {
       result.data.forEach(t => addDate(t.startTime));
+    } else if (result.name === 'cursor') {
+      result.data.forEach(chat => {
+        addDate(chat.startTime);
+        addDate(chat.endTime);
+        (chat.turns || []).forEach(turn => addDate(turn.timestamp));
+      });
+    } else if (result.name === 'cursorPlans') {
+      result.data.forEach(plan => addDate(plan.updatedAt));
     } else if (result.name === 'linear') {
       result.data.forEach(issue => {
         addDate(issue.updatedAt);
         (issue.comments || []).forEach(c => addDate(c.createdAt));
       });
     } else if (result.name === 'github') {
-      result.data.forEach(pr => addDate(pr.updatedAt));
+      result.data.forEach(pr => {
+        addDate(pr.updatedAt);
+        if (pr.isMergedInTimeframe) addDate(pr.mergedAt);
+        (pr.userCommits || []).forEach(c => addDate(c.timestamp));
+      });
     } else if (result.name === 'slack') {
       result.data.forEach(msg => addDate(msg.timestamp));
     } else if (Array.isArray(result.data)) {

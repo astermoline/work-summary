@@ -11,17 +11,23 @@ const STATE_FILE_PATH = path.resolve('state.json');
 export function getConfig() {
   return {
     geminiApiKey: process.env.GEMINI_API_KEY,
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    geminiFallbackModels: process.env.GEMINI_FALLBACK_MODELS || 'gemini-4-argon,gemini-3.6-flash,gemini-3.5-flash',
     githubToken: process.env.GITHUB_TOKEN,
     githubUsername: process.env.GITHUB_USERNAME,
+    githubOrg: process.env.GITHUB_ORG || 'Storyllp',
     linearToken: process.env.LINEAR_TOKEN,
     fathomToken: process.env.FATHOM_TOKEN,
     slackToken: process.env.SLACK_USER_TOKEN || process.env.SLACK_TOKEN,
     googleClientId: process.env.GOOGLE_CLIENT_ID,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    // Google Calendar specific details
-    googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/oauth2callback',
+    // Google Calendar / Gmail / Drive specific details
+    googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3048/oauth2callback',
+    gmailMentionLabel: process.env.GMAIL_MENTION_LABEL || 'explicit-mention',
     userName: process.env.USER_NAME || 'Nick Moline',
+    cursorWorkspaceRoot: process.env.CURSOR_WORKSPACE_ROOT || '~/workspace/story',
+    cursorProjectsDir: process.env.CURSOR_PROJECTS_DIR || '',
+    cursorPlansDir: process.env.CURSOR_PLANS_DIR || '',
   };
 }
 

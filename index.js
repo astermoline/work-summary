@@ -4,13 +4,17 @@ import { saveAndNotify } from './src/notifier.js';
 
 // Import collectors
 import calendar from './src/collectors/calendar.js';
+import gmail from './src/collectors/gmail.js';
+import gdrive from './src/collectors/gdrive.js';
 import fathom from './src/collectors/fathom.js';
 import transcripts from './src/collectors/transcripts.js';
+import cursor from './src/collectors/cursor.js';
+import cursorPlans from './src/collectors/cursor-plans.js';
 import linear from './src/collectors/linear.js';
 import github from './src/collectors/github.js';
 import slack from './src/collectors/slack.js';
 
-const collectors = [calendar, fathom, transcripts, linear, github, slack];
+const collectors = [calendar, gmail, gdrive, fathom, transcripts, cursor, cursorPlans, linear, github, slack];
 
 /**
  * Main execution flow
@@ -97,6 +101,8 @@ async function main() {
         });
         if (data.error) {
           console.log(`[!] ${collector.displayName} encountered an error: ${data.error}`);
+        } else if (collector.name === 'gmail' && data && !Array.isArray(data)) {
+          console.log(`[+] ${collector.displayName} returned ${data.sent?.length || 0} sent email(s) and ${data.explicitMentions?.length || 0} explicit-mention thread(s).`);
         } else if (Array.isArray(data)) {
           console.log(`[+] ${collector.displayName} returned ${data.length} items.`);
         } else {

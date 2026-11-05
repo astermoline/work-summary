@@ -6,11 +6,15 @@ While the system is meant to be modular, (separating the various collectors into
 
 ## Current Collectors
 - Google Calendar (calendar.js)
+- Gmail Sent Messages (gmail.js)
+- Google Drive / Docs (gdrive.js)
 - Fathom Video (fathom.js)
-- GitHub (github.js)
+- GitHub PRs, Commits, Reviews & Merges (github.js)
 - Linear (linear.js)
 - Slack (slack.js)
 - Arbitrary Transcripts (transcripts.js)
+- Cursor Brain Chats (cursor.js)
+- Cursor Plans (cursor-plans.js)
 
 ## Setup
 copy the .env.example file to .env and populate the environment variables with tokens from the various services.
