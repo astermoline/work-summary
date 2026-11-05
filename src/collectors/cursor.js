@@ -164,8 +164,15 @@ export function deriveChatTitle(queries, fallbackId = 'Cursor Chat', planNames =
   // 2. If a CreatePlan call occurred in the chat, use the plan name (with any ticket IDs found in the queries)
   if (Array.isArray(planNames) && planNames.length > 0) {
     const planTitle = planNames[0].trim();
-    const ticketMatches = queryList.join(' ').match(/\b(?:STY|REQS)-\d+\b/gi) || [];
-    const uniqueTickets = Array.from(new Set(ticketMatches.map(t => t.toUpperCase()))).slice(0, 2);
+    const ticketMatches = queryList.join(' ').match(/\b[A-Z]{2,10}-\d+\b/g) || [];
+    const ignoredPrefixes = new Set(['UTF', 'SHA', 'HTTP', 'HTTPS', 'ISO', 'RFC', 'TLS', 'AES', 'SQL', 'PHP', 'PSR', 'CVE']);
+    const uniqueTickets = Array.from(
+      new Set(
+        ticketMatches
+          .map(t => t.toUpperCase())
+          .filter(t => !ignoredPrefixes.has(t.split('-')[0]))
+      )
+    ).slice(0, 2);
     if (uniqueTickets.length > 0 && !new RegExp(uniqueTickets[0], 'i').test(planTitle)) {
       return `${uniqueTickets.join(' / ')}: ${planTitle}`;
     }
@@ -241,13 +248,13 @@ function workspacePathToSlugPrefix(workspacePath) {
 /**
  * Discovers all top-level parent chat transcript (.jsonl) files across ~/.cursor/projects,
  * excluding subagent transcripts so internal subagent runs are not duplicated as user chats,
- * and filtering to projects under the allowed workspace root (defaults to ~/workspace/story).
+ * and optionally filtering to projects under the configured workspace root (`CURSOR_WORKSPACE_ROOT`).
  *
  * @param {string} rootDir Base directory (defaults to ~/.cursor/projects)
- * @param {string} [allowedWorkspaceRoot] Only include Cursor projects inside this workspace path (defaults to ~/workspace/story)
+ * @param {string} [allowedWorkspaceRoot] Optional workspace root path to filter Cursor projects (blank or '*' allows all)
  * @returns {Array<{ filePath: string, chatId: string, project: string }>}
  */
-function discoverTranscriptFiles(rootDir, allowedWorkspaceRoot = path.join(os.homedir(), 'workspace', 'story')) {
+function discoverTranscriptFiles(rootDir, allowedWorkspaceRoot = '') {
   if (!fs.existsSync(rootDir)) return [];
 
   const subagentIds = new Set();
@@ -257,6 +264,10 @@ function discoverTranscriptFiles(rootDir, allowedWorkspaceRoot = path.join(os.ho
   const allowedSlugPrefix = isAllowAll ? '' : workspacePathToSlugPrefix(allowedWorkspaceRoot);
 
   const isProjectAllowed = (projectDirName) => {
+    // Always skip internal Cursor cleanup and temporary directories
+    if (projectDirName.startsWith('.') || projectDirName.startsWith('tmp-') || projectDirName === 'empty-window' || /^\d+$/.test(projectDirName)) {
+      return false;
+    }
     if (isAllowAll || !allowedSlugPrefix) return true;
     return projectDirName === allowedSlugPrefix || projectDirName.startsWith(`${allowedSlugPrefix}-`);
   };
@@ -563,9 +574,9 @@ export default {
       const untilTime = new Date(nowDate).getTime();
 
       const allowedWorkspaceRoot =
-        env?.cursorWorkspaceRoot ||
-        process.env.CURSOR_WORKSPACE_ROOT ||
-        path.join(os.homedir(), 'workspace', 'story');
+        env?.cursorWorkspaceRoot ??
+        process.env.CURSOR_WORKSPACE_ROOT ??
+        '';
 
       const transcriptFiles = discoverTranscriptFiles(rootDir, allowedWorkspaceRoot);
       const collectedChats = [];

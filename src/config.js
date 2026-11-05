@@ -15,7 +15,7 @@ export function getConfig() {
     geminiFallbackModels: process.env.GEMINI_FALLBACK_MODELS || 'gemini-4-argon,gemini-3.6-flash,gemini-3.5-flash',
     githubToken: process.env.GITHUB_TOKEN,
     githubUsername: process.env.GITHUB_USERNAME,
-    githubOrg: process.env.GITHUB_ORG || 'Storyllp',
+    githubOrg: process.env.GITHUB_ORG || '',
     linearToken: process.env.LINEAR_TOKEN,
     fathomToken: process.env.FATHOM_TOKEN,
     slackToken: process.env.SLACK_USER_TOKEN || process.env.SLACK_TOKEN,
@@ -23,9 +23,9 @@ export function getConfig() {
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
     // Google Calendar / Gmail / Drive specific details
     googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3048/oauth2callback',
-    gmailMentionLabel: process.env.GMAIL_MENTION_LABEL || 'explicit-mention',
+    gmailMentionLabel: process.env.GMAIL_MENTION_LABEL || '',
     userName: process.env.USER_NAME || 'Nick Moline',
-    cursorWorkspaceRoot: process.env.CURSOR_WORKSPACE_ROOT || '~/workspace/story',
+    cursorWorkspaceRoot: process.env.CURSOR_WORKSPACE_ROOT || '',
     cursorProjectsDir: process.env.CURSOR_PROJECTS_DIR || '',
     cursorPlansDir: process.env.CURSOR_PLANS_DIR || '',
   };

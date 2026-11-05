@@ -387,7 +387,7 @@ Output format:
   - Detail what was asked by others, what ${userName} acknowledged or committed to do, what was investigated/built in Cursor, key decisions made, and any open action items.
   - Include clickable links to Slack permalinks, Fathom recordings, or Gmail threads where available, or reference the transcript filename / Cursor chat title.
   - EXPLICIT MENTION EMAILS RULE:
-    - Any threads listed under \`Gmail "Explicit Mention" Threads\` come from a Gmail filter that tags emails where Jessica or Summer explicitly mention ${userName}.
+    - Any threads listed under \`Gmail "Explicit Mention" Threads\` come from a user-configured Gmail filter/label that tags emails where colleagues explicitly mention ${userName}.
     - Do NOT include incoming \`Explicit Mention\` emails in the top "## Stand-up Summary" section (unless ${userName} also sent a reply in \`Gmail (Sent by ${userName})\`).
     - Instead, whenever \`Gmail "Explicit Mention" Threads\` are present, include a dedicated subsection titled "### Explicit Mention Emails to Check" under "## Conversation Summary" so ${userName} knows to check their email. For each thread, list the Subject with a clickable link (\`[Open Thread in Gmail](url)\`), who sent the new message(s), whether it is still unread or awaiting a response, and a concise summary of what was said or requested of ${userName}.`;
 

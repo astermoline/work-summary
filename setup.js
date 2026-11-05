@@ -30,15 +30,18 @@ async function main() {
   const existingConfig = {
     USER_NAME: process.env.USER_NAME || 'Nick Moline',
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-    GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
     GITHUB_USERNAME: process.env.GITHUB_USERNAME || '',
     GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
+    GITHUB_ORG: process.env.GITHUB_ORG || '',
     LINEAR_TOKEN: process.env.LINEAR_TOKEN || '',
     FATHOM_TOKEN: process.env.FATHOM_TOKEN || '',
     SLACK_USER_TOKEN: process.env.SLACK_USER_TOKEN || process.env.SLACK_TOKEN || '',
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
     GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3048/oauth2callback',
+    GMAIL_MENTION_LABEL: process.env.GMAIL_MENTION_LABEL || '',
+    CURSOR_WORKSPACE_ROOT: process.env.CURSOR_WORKSPACE_ROOT || '',
   };
 
   if (isGoogleOnly && existingConfig.GOOGLE_CLIENT_ID && existingConfig.GOOGLE_CLIENT_SECRET) {
@@ -83,6 +86,10 @@ async function main() {
   const ghToken = await rl.question(`GitHub PAT (Personal Access Token) [${mask(existingConfig.GITHUB_TOKEN)}]: `);
   answers.GITHUB_TOKEN = ghToken.trim() || existingConfig.GITHUB_TOKEN;
 
+  // 6. GitHub Organization (optional)
+  const ghOrg = await rl.question(`GitHub Organization to scope PRs/commits (optional) [${existingConfig.GITHUB_ORG || 'all'}]: `);
+  answers.GITHUB_ORG = ghOrg.trim() === 'all' ? '' : (ghOrg.trim() || existingConfig.GITHUB_ORG);
+
   // 6. Linear Token
   const linearToken = await rl.question(`Linear Personal API Key [${mask(existingConfig.LINEAR_TOKEN)}]: `);
   answers.LINEAR_TOKEN = linearToken.trim() || existingConfig.LINEAR_TOKEN;
@@ -112,6 +119,12 @@ async function main() {
 
   const googleRedirectUri = await rl.question(`Google Redirect URI [${existingConfig.GOOGLE_REDIRECT_URI}]: `);
   answers.GOOGLE_REDIRECT_URI = googleRedirectUri.trim() || existingConfig.GOOGLE_REDIRECT_URI;
+
+  const gmailLabel = await rl.question(`Gmail label for explicit mentions notice (optional) [${existingConfig.GMAIL_MENTION_LABEL || 'none'}]: `);
+  answers.GMAIL_MENTION_LABEL = gmailLabel.trim() === 'none' ? '' : (gmailLabel.trim() || existingConfig.GMAIL_MENTION_LABEL);
+
+  const cursorRoot = await rl.question(`Cursor Workspace Root to scope Brain chats/plans (optional, e.g. ~/workspace/company) [${existingConfig.CURSOR_WORKSPACE_ROOT || 'all'}]: `);
+  answers.CURSOR_WORKSPACE_ROOT = cursorRoot.trim() === 'all' ? '' : (cursorRoot.trim() || existingConfig.CURSOR_WORKSPACE_ROOT);
 
   // Write .env file
   let envContent = '';

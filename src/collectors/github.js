@@ -81,14 +81,21 @@ const PR_SEARCH_QUERY = `
 `;
 
 /**
- * Extracts Linear ticket keys (e.g., STY-1790, REQS-245) from text.
+ * Extracts issue keys (e.g., ENG-123, PROJ-456) from text.
  * @param {string} text
  * @returns {Array<string>}
  */
 function extractLinearTickets(text) {
   if (!text) return [];
-  const matches = text.match(/\b(?:STY|REQS)-\d+\b/gi) || [];
-  return Array.from(new Set(matches.map(m => m.toUpperCase())));
+  const ignoredPrefixes = new Set(['UTF', 'SHA', 'HTTP', 'HTTPS', 'ISO', 'RFC', 'TLS', 'AES', 'SQL', 'PHP', 'PSR', 'CVE']);
+  const matches = text.match(/\b[A-Z]{2,10}-\d+\b/g) || [];
+  return Array.from(
+    new Set(
+      matches
+        .map(m => m.toUpperCase())
+        .filter(t => !ignoredPrefixes.has(t.split('-')[0]))
+    )
+  );
 }
 
 /**
@@ -107,15 +114,10 @@ function isCommitByUser(commitNode, usernameLower, userName = '') {
     return true;
   }
 
-  // Fallback check for secondary login or git config name
-  const knownLogins = new Set([usernameLower, 'astermoline', 'nickmoline']);
-  if ((authorLogin && knownLogins.has(authorLogin)) || (committerLogin && knownLogins.has(committerLogin))) {
-    return true;
-  }
-
   if (userName) {
     const authorName = (commitNode.author?.name || '').toLowerCase();
-    if (authorName && (authorName === userName.toLowerCase() || authorName.includes('aster') || authorName.includes('moline'))) {
+    const userWords = userName.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+    if (authorName && (authorName === userName.toLowerCase() || userWords.some(w => authorName.includes(w)))) {
       return true;
     }
   }
@@ -133,7 +135,7 @@ export default {
   async collect(sinceDate, nowDate, env) {
     const token = env.githubToken;
     const username = env.githubUsername;
-    const org = env.githubOrg || process.env.GITHUB_ORG || 'Storyllp';
+    const org = env.githubOrg ?? process.env.GITHUB_ORG ?? '';
 
     if (!token || !username) {
       console.log('[-] GitHub is not configured (missing GITHUB_TOKEN or GITHUB_USERNAME). Skipping...');

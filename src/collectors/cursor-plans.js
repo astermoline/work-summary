@@ -62,9 +62,16 @@ export function parsePlanContent(rawContent, filename = '') {
     }
   }
 
-  // Extract referenced Linear issue identifiers (e.g., STY-1790, REQS-243)
-  const ticketMatches = rawContent.match(/\b(?:STY|REQS)-\d+\b/gi) || [];
-  const referencedTickets = Array.from(new Set(ticketMatches.map(t => t.toUpperCase())));
+  // Extract referenced issue identifiers (e.g., ENG-123, PROJ-456)
+  const ignoredPrefixes = new Set(['UTF', 'SHA', 'HTTP', 'HTTPS', 'ISO', 'RFC', 'TLS', 'AES', 'SQL', 'PHP', 'PSR', 'CVE']);
+  const ticketMatches = rawContent.match(/\b[A-Z]{2,10}-\d+\b/g) || [];
+  const referencedTickets = Array.from(
+    new Set(
+      ticketMatches
+        .map(t => t.toUpperCase())
+        .filter(t => !ignoredPrefixes.has(t.split('-')[0]))
+    )
+  );
 
   // Clean body excerpt (strip mermaid diagrams to keep text concise)
   let cleanBody = body
@@ -106,6 +113,13 @@ export default {
       const sinceTime = new Date(sinceDate).getTime();
       const untilTime = new Date(nowDate).getTime();
 
+      const allowedWorkspaceRoot = env?.cursorWorkspaceRoot || process.env.CURSOR_WORKSPACE_ROOT || '';
+      const resolvedWorkspaceRoot = allowedWorkspaceRoot
+        ? (allowedWorkspaceRoot.startsWith('~/')
+            ? path.join(os.homedir(), allowedWorkspaceRoot.slice(2))
+            : path.resolve(allowedWorkspaceRoot))
+        : '';
+
       const files = fs.readdirSync(plansDir).filter(f => f.endsWith('.plan.md') && !f.startsWith('.'));
       const collectedPlans = [];
 
@@ -130,12 +144,19 @@ export default {
 
         const parsed = parsePlanContent(rawContent, file);
 
-        // Exclude plans that explicitly target non-Story workspaces (e.g. work-summary or personal repos)
-        // when they have no Story ticket references (STY-* / REQS-*) and no references to workspace/story
-        const mentionsStoryWorkspace = /workspace\/story\b|Storyllp\b/i.test(rawContent);
-        const mentionsOtherWorkspace = /\/workspace\/(?!story\b)[a-z0-9_-]+/i.test(rawContent);
-        if (mentionsOtherWorkspace && !mentionsStoryWorkspace && parsed.referencedTickets.length === 0) {
-          continue;
+        // If CURSOR_WORKSPACE_ROOT is configured, exclude plans that explicitly target a different workspace directory
+        if (resolvedWorkspaceRoot) {
+          const parentWorkspaceDir = path.dirname(resolvedWorkspaceRoot);
+          const targetDirName = path.basename(resolvedWorkspaceRoot);
+          const escapedParent = parentWorkspaceDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const escapedTarget = targetDirName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+          const mentionsConfiguredRoot = new RegExp(`${escapedParent}/${escapedTarget}\\b`, 'i').test(rawContent);
+          const mentionsSiblingWorkspace = new RegExp(`${escapedParent}/(?!${escapedTarget}\\b)[a-z0-9_.-]+`, 'i').test(rawContent);
+
+          if (mentionsSiblingWorkspace && !mentionsConfiguredRoot && parsed.referencedTickets.length === 0) {
+            continue;
+          }
         }
 
         const completedCount = parsed.todos.filter(t => t.status === 'completed').length;
