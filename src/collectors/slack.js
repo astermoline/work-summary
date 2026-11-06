@@ -32,14 +32,15 @@ async function resolveUserName(userId, token) {
 }
 
 /**
- * Resolves a Slack channel object/ID to a human-readable channel name.
+ * Resolves a Slack channel object/ID to a human-readable channel name and checks if it is a self-DM.
  * Handles DMs (e.g., D12345) by looking up the target DM user.
  */
-async function resolveChannelName(channel, token) {
-  if (!channel || !channel.id) return 'unknown-channel';
+async function resolveChannelInfo(channel, token, currentUserId) {
+  if (!channel || !channel.id) return { name: 'unknown-channel', isSelfNote: false };
   if (channelCache.has(channel.id)) return channelCache.get(channel.id);
 
   let name = channel.name || 'unknown-channel';
+  let isSelfNote = false;
 
   // If it's a DM (channel ID starts with D)
   if (channel.id.startsWith('D')) {
@@ -50,8 +51,13 @@ async function resolveChannelName(channel, token) {
       });
       const data = await res.json();
       if (data.ok && data.channel?.user) {
-        const targetUserName = await resolveUserName(data.channel.user, token);
-        name = `Direct Message with ${targetUserName}`;
+        if (currentUserId && data.channel.user === currentUserId) {
+          name = 'Personal Note to Self (Slack Self-DM)';
+          isSelfNote = true;
+        } else {
+          const targetUserName = await resolveUserName(data.channel.user, token);
+          name = `Direct Message with ${targetUserName}`;
+        }
       } else {
         name = `Direct Message (${channel.id})`;
       }
@@ -60,8 +66,9 @@ async function resolveChannelName(channel, token) {
     }
   }
 
-  channelCache.set(channel.id, name);
-  return name;
+  const info = { name, isSelfNote };
+  channelCache.set(channel.id, info);
+  return info;
 }
 
 export default {
@@ -129,7 +136,7 @@ export default {
       const results = [];
 
       for (const match of filteredMatches) {
-        const resolvedChannelName = await resolveChannelName(match.channel, token);
+        const { name: resolvedChannelName, isSelfNote } = await resolveChannelInfo(match.channel, token, userId);
 
         const item = {
           id: match.iid || match.ts,
@@ -137,6 +144,7 @@ export default {
           timestamp: new Date(parseFloat(match.ts) * 1000).toISOString(),
           channelName: resolvedChannelName,
           channelId: match.channel?.id,
+          isSelfNote,
           permalink: match.permalink || '',
           isThreadReply: Boolean(match.thread_ts && match.thread_ts !== match.ts),
           parentMessage: null,
@@ -144,7 +152,7 @@ export default {
         };
 
         // If this message is a reply in a thread, fetch the parent message for context
-        if (item.isThreadReply && match.channel?.id && match.thread_ts) {
+        if (!isSelfNote && item.isThreadReply && match.channel?.id && match.thread_ts) {
           try {
             const replyUrl = `https://slack.com/api/conversations.replies?channel=${match.channel.id}&ts=${match.thread_ts}&limit=1`;
             const replyRes = await fetch(replyUrl, {
@@ -166,7 +174,7 @@ export default {
           } catch (err) {
             // Non-critical if thread context fetch fails
           }
-        } else if (!item.isThreadReply && match.channel?.id) {
+        } else if (!isSelfNote && !item.isThreadReply && match.channel?.id) {
           try {
             // Fetch preceding messages in channel/DM using conversations.history
             const historyUrl = `https://slack.com/api/conversations.history?channel=${match.channel.id}&latest=${match.ts}&limit=4&inclusive=true`;

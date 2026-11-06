@@ -49,6 +49,117 @@ export function getCustomContext() {
 }
 
 /**
+ * Returns the local YYYY-MM-DD date string for the start of the work period covered.
+ * @param {string|Date} sinceDate Start of lookback window
+ * @returns {string} YYYY-MM-DD in local time
+ */
+export function getFirstCoveredDateStr(sinceDate) {
+  if (typeof sinceDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sinceDate)) {
+    return sinceDate;
+  }
+  const d = new Date(sinceDate);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Resolves the hierarchical summary file path: summaries/YYYY/MM/YYYY-MM-DD.md
+ * @param {string|Date} firstCoveredDate YYYY-MM-DD string or Date
+ * @returns {string} Absolute file path
+ */
+export function getSummaryFilePath(firstCoveredDate) {
+  const dateStr = getFirstCoveredDateStr(firstCoveredDate);
+  const [year, month] = dateStr.split('-');
+  return path.resolve('summaries', year, month, `${dateStr}.md`);
+}
+
+/**
+ * Reads any pre-written manual notes from the target Obsidian daily summary file
+ * (e.g. summaries/YYYY/MM/YYYY-MM-DD.md) before the summary is generated.
+ * - If the file exists and has no "## Stand-up Summary" heading yet, the entire body
+ *   (minus YAML frontmatter) is treated as pre-written notes from Obsidian.
+ * - If the file already has a generated summary (e.g. on a re-run), any content under
+ *   "## Manual Notes", "### Manual Notes", or "## Notes" is preserved and returned.
+ *
+ * @param {string|Date} firstCoveredDate YYYY-MM-DD string or Date
+ * @returns {string|null} Manual notes text, or null if none exist
+ */
+export function getManualNotesForDate(firstCoveredDate) {
+  const dateStr = getFirstCoveredDateStr(firstCoveredDate);
+  const nestedPath = getSummaryFilePath(dateStr);
+  const legacyFlatPath = path.resolve('summaries', `${dateStr}.md`);
+
+  const targetPath = fs.existsSync(nestedPath)
+    ? nestedPath
+    : (fs.existsSync(legacyFlatPath) ? legacyFlatPath : null);
+
+  if (!targetPath) return null;
+
+  try {
+    const raw = fs.readFileSync(targetPath, 'utf-8').trim();
+    if (!raw) return null;
+
+    // Strip YAML frontmatter if present
+    const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
+    if (!body) return null;
+
+    const hasGeneratedSummary = /^#{1,3}\s*(?:Stand-up|Work)\s+Summary/im.test(body);
+    if (!hasGeneratedSummary) {
+      // Entire file was pre-written by the user in Obsidian before running the script
+      return body;
+    }
+
+    // If the file already has a generated summary, extract any explicit Manual Notes section
+    // or any notes written above the Stand-up Summary heading
+    const extractedParts = [];
+    const summaryHeadingIdx = body.search(/^#{1,3}\s*(?:Stand-up|Work)\s+Summary/im);
+    if (summaryHeadingIdx > 0) {
+      const aboveHeading = body.slice(0, summaryHeadingIdx).trim();
+      if (aboveHeading) extractedParts.push(aboveHeading);
+    }
+
+    const manualSectionMatch = body.match(/^#{2,3}\s*(?:Manual Notes(?:\s*\(Obsidian\))?|Personal Notes(?:\s*\(Obsidian\))?|Notes)\s*\r?\n([\s\S]*?)(?=\r?\n#{2,3}\s+|(?![\s\S]))/im);
+    if (manualSectionMatch && manualSectionMatch[1]?.trim()) {
+      extractedParts.push(manualSectionMatch[1].trim());
+    }
+
+    return extractedParts.length > 0 ? extractedParts.join('\n\n') : null;
+  } catch (err) {
+    console.warn(`Warning: Failed to inspect manual notes in ${targetPath}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Recursively discovers all YYYY-MM-DD.md files inside summaries/ (supporting both YYYY/MM/YYYY-MM-DD.md and flat YYYY-MM-DD.md).
+ * @param {string} dir
+ * @returns {Array<{ dateStr: string, relPath: string, fullPath: string }>}
+ */
+function discoverSummaryFiles(dir, baseDir = dir) {
+  const results = [];
+  if (!fs.existsSync(dir)) return results;
+
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...discoverSummaryFiles(fullPath, baseDir));
+    } else if (entry.isFile() && /^\d{4}-\d{2}-\d{2}\.md$/.test(entry.name)) {
+      const dateStr = entry.name.replace('.md', '');
+      results.push({
+        dateStr,
+        relPath: path.relative(baseDir, fullPath),
+        fullPath,
+      });
+    }
+  }
+  return results;
+}
+
+/**
  * Finds and reads the most recent prior summary files in summaries/ before sinceDate.
  * @param {string} sinceDate ISO date string
  * @param {number} limit Max number of recent files to return
@@ -59,24 +170,18 @@ export function getRecentSummaries(sinceDate, limit = 2) {
   if (!fs.existsSync(summariesDir)) return [];
 
   try {
-    const sinceTime = new Date(sinceDate).getTime();
-    const files = fs.readdirSync(summariesDir)
-      .filter(f => f.endsWith('.md'))
-      .sort((a, b) => b.localeCompare(a)); // Sort newest to oldest by filename (YYYY-MM-DD.md)
+    const currentFirstDateStr = getFirstCoveredDateStr(sinceDate);
+    const files = discoverSummaryFiles(summariesDir)
+      .filter(f => f.dateStr < currentFirstDateStr)
+      .sort((a, b) => b.dateStr.localeCompare(a.dateStr)); // Sort newest to oldest by YYYY-MM-DD
 
     const result = [];
     for (const file of files) {
-      const datePart = file.replace('.md', '');
-      const fileTime = new Date(`${datePart}T23:59:59`).getTime();
-      
-      // Select files dated on or before sinceDate
-      if (fileTime <= sinceTime + 24 * 60 * 60 * 1000) {
-        const filePath = path.join(summariesDir, file);
-        const content = fs.readFileSync(filePath, 'utf-8').trim();
-        if (content) {
-          result.push({ filename: file, content });
-          if (result.length >= limit) break;
-        }
+      const content = fs.readFileSync(file.fullPath, 'utf-8').trim();
+      // Only include completed summaries, not pre-written note stubs
+      if (content && /^#{1,3}\s*(?:Stand-up|Work)\s+Summary/im.test(content)) {
+        result.push({ filename: file.relPath, content });
+        if (result.length >= limit) break;
       }
     }
     return result;

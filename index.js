@@ -1,4 +1,4 @@
-import { getConfig, getLastRun, getDefaultLastRun, setLastRun, getCustomContext, getRecentSummaries } from './src/config.js';
+import { getConfig, getLastRun, getDefaultLastRun, setLastRun, getCustomContext, getRecentSummaries, getFirstCoveredDateStr, getManualNotesForDate } from './src/config.js';
 import { generateSummary } from './src/summarizer.js';
 import { saveAndNotify } from './src/notifier.js';
 
@@ -121,8 +121,10 @@ async function main() {
 
   console.log('[*] Generating stand-up work summary...');
   try {
+    const firstCoveredDateStr = getFirstCoveredDateStr(sinceISO);
     const customContext = getCustomContext();
     const recentSummaries = getRecentSummaries(sinceISO, 2);
+    const manualNotes = getManualNotesForDate(firstCoveredDateStr);
 
     if (customContext) {
       console.log('[*] Loaded background context from context.md');
@@ -130,15 +132,18 @@ async function main() {
     if (recentSummaries.length > 0) {
       console.log(`[*] Loaded ${recentSummaries.length} recent prior summary file(s) for temporal continuity.`);
     }
+    if (manualNotes) {
+      console.log(`[*] Loaded pre-written manual notes for ${firstCoveredDateStr} from summaries/`);
+    }
 
-    const summary = await generateSummary(activeResults, sinceISO, untilISO, env.geminiApiKey, env.userName, env.geminiModel, customContext, recentSummaries);
+    const summary = await generateSummary(activeResults, sinceISO, untilISO, env.geminiApiKey, env.userName, env.geminiModel, customContext, recentSummaries, manualNotes);
     
     console.log('\n--- Work Summary Output ---');
     console.log(summary);
     console.log('---------------------------\n');
 
-    // Save outputs and update state
-    const savedPath = await saveAndNotify(summary, untilISO);
+    // Save outputs (named after firstCoveredDateStr inside summaries/YYYY/MM/YYYY-MM-DD.md) and update state
+    const savedPath = await saveAndNotify(summary, sinceISO, untilISO, manualNotes);
 
     if (args.noSaveState || args.since || args.hours || args.days || args.until) {
       console.log('[*] Lookback override or --no-save active. Skipping state timestamp update.');

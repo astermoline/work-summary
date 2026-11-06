@@ -10,13 +10,17 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
  * @param {string} [modelName] Gemini model to use (defaults to gemini-4-argon)
  * @returns {Promise<string>} Markdown stand-up summary
  */
-export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey, userName, modelName = process.env.GEMINI_MODEL || 'gemini-4-argon', customContext = null, recentSummaries = []) {
+export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey, userName, modelName = process.env.GEMINI_MODEL || 'gemini-4-argon', customContext = null, recentSummaries = [], manualNotes = null) {
   if (!apiKey) {
     throw new Error('Gemini API key is not configured. Please set GEMINI_API_KEY.');
   }
 
   // Format the collected data for the LLM
   let formattedData = '';
+
+  if (manualNotes && manualNotes.trim()) {
+    formattedData += `### Authoritative Personal Work Notes (Written by ${userName} in Obsidian Daily Note):\n${manualNotes.trim()}\n\n`;
+  }
 
   for (const result of serviceResults) {
     if (!result.data || (Array.isArray(result.data) && result.data.length === 0)) {
@@ -261,6 +265,14 @@ export async function generateSummary(serviceResults, sinceDate, nowDate, apiKey
     } else if (result.name === 'slack') {
       result.data.forEach(msg => {
         const msgDate = new Date(msg.timestamp).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        if (msg.isSelfNote) {
+          formattedData += `- **Personal Work Note / Instruction (Slack Note to Self)** (${msgDate}):\n`;
+          formattedData += `  - **Authoritative Note from ${userName}**: "${msg.text.replace(/\n/g, ' ')}"\n`;
+          if (msg.permalink) {
+            formattedData += `  - **Permalink**: ${msg.permalink}\n`;
+          }
+          return;
+        }
         formattedData += `- **Slack Message in #${msg.channelName}** (${msgDate}):\n`;
         formattedData += `  - **Your Message**: "${msg.text.replace(/\n/g, ' ')}"\n`;
         if (msg.permalink) {
@@ -353,6 +365,8 @@ Output format:
 - Bullet points grouped logically by project, feature, or theme (rather than just listing by source) detailing specific updates (e.g. PRs reviewed, meetings/calls attended, tickets updated, tasks investigated/implemented in Cursor, Slack thread responses, comments left).
 - Use an active first-person voice ("I worked on...", "Reviewed...", "Discussed...", "Acknowledged...") ONLY for actions taken by the user (${userName}).
 - Cursor Brain Chats represent AI pair-programming sessions, investigations, runbook audits, and feature/bugfix implementations directed by ${userName} in the Cursor IDE. Use them to enrich the technical details and context of ${userName}'s work in the stand-up summary (and to capture investigations, planning, or debugging work that may not have a standalone PR or ticket update), while still strictly adhering to the Linear & GitHub creation, state-transition, and priority rules below.
+- PERSONAL WORK NOTES (SLACK SELF-DM & OBSIDIAN DAILY NOTES):
+  - Any items labeled \`Personal Work Note / Instruction (Slack Note to Self)\` or \`Authoritative Personal Work Notes (Written by ${userName} in Obsidian Daily Note)\` are direct first-person notes, reminders, and instructions jotted down by ${userName} for this workday. Treat them as authoritative work context from ${userName}, incorporate the accomplishments/tasks they describe into the stand-up summary, and follow any instructions they contain. Also list any Slack Notes to Self under "## Conversation Summary" for personal reference.
 - The user's name is ${userName} (and also referred to as Aster / Aster Moe in context). When synthesizing Fathom.video meeting summaries, arbitrary call transcripts, or Slack discussions, pay close attention to who is speaking or who did the work. In call transcripts, speakers may be named directly (e.g. Aster, Jessica Hubley) or labeled generically ('You', 'The speaker'). Only attribute tasks, resolutions, or actions to ${userName} if the logs specifically show ${userName} did them or agreed to do them. If a conversation describes work done by others or general team decisions, summarize it as a collaborative discussion (e.g. 'Participated in a team alignment meeting where X was discussed', 'Discussed X with Jessica in a phone call', 'Discussed X with the team in Slack') rather than attributing other people's actions to ${userName}.
 - Describe the timeframe of the summary naturally and accurately. Do not refer to the timeframe as a "sprint", "period", "reporting period", or "sprint/period". It is just a stand-up summary of work done since the last run.
   - Describe the timeframe of the work in the opening sentence of the summary based on this hint: "${timeframeHint}".
